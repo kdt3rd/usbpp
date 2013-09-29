@@ -6,7 +6,8 @@ USBPP = Library( 'usbpp',
                           'DeviceManager.cpp',
                           'UVCDevice.cpp' ), USBX )
 
-Executable( 'hid_info', Compile( 'hid_info.cpp' ) )
+if sys.platform.startswith( 'linux' ):
+    Executable( 'hid_info', Compile( 'hid_info.cpp' ) )
 Executable( 'usb_neximage', Compile( 'usb_neximage.cpp' ), USBPP, USBX )
 if JPEG:
     Executable( 'usb_spacepro', Compile( 'usb_spacepro.cpp', 'SpacePilotDevice.cpp' ), USBPP, USBX, JPEG )

@@ -24,7 +24,8 @@
 
 #include "Device.h"
 #include <iomanip>
-#include <uchar.h>
+#include <locale>
+#include <cwchar>
 #include <string.h>
 #include "Util.h"
 #include <functional>
@@ -446,7 +447,7 @@ Device::pullString( uint8_t desc_idx )
 	// more useable
 	char xxx[512];
 	const char16_t *uCode = reinterpret_cast<const char16_t *>( tmpbuf );
-	std::mbstate_t ps;
+	std::mbstate_t ps = std::mbstate_t();
 	char *curX = xxx;
 	memset( &ps, 0, sizeof(ps) );
 	size_t xSz = 0;

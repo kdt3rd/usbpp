@@ -26,8 +26,9 @@
 #include "Util.h"
 
 // cheating for now, need to have our own constants to work on the mac
-#include <linux/usb/video.h>
-#include <linux/v4l2-controls.h>
+//#include <linux/usb/video.h>
+//#include <linux/v4l2-controls.h>
+#include "uvc_constants.h"
 #include <stdio.h>
 
 
