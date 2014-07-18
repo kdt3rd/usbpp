@@ -101,6 +101,32 @@
 #define UVC_CT_ROLL_ABSOLUTE_CONTROL			0x0f
 #define UVC_CT_ROLL_RELATIVE_CONTROL			0x10
 #define UVC_CT_PRIVACY_CONTROL				0x11
+/* UVC 1.5 */
+#define UVC_CT_FOCUS_SIMPLE_CONTROL				0x12
+#define UVC_CT_WINDOW_CONTROL					0x13
+#define UVC_CT_REGION_OF_INTEREST_CONTROL		0x14
+
+/* TIS specific controls.... */
+#define UVC_CT_TIS_PIXEL_CLOCK                0x24
+#define UVC_CT_TIS_PARTIAL_SCAN_WIDTH         0x25
+#define UVC_CT_TIS_PARTIAL_SCAN_HEIGHT        0x26
+#define UVC_CT_TIS_BINNING                    0x2a
+#define UVC_CT_TIS_SOFTWARE_TRIGGER           0x2b
+#define UVC_CT_TIS_SENSOR_RESET               0x2c
+#define UVC_CT_TIS_FIRMWARE_REVISION          0x2d
+#define UVC_CT_TIS_GPOUT                      0x2e
+#define UVC_CT_TIS_HDR_ENABLE                 0x2f
+#define UVC_CT_TIS_HDR_SHUTTER_1              0x30
+#define UVC_CT_TIS_HDR_SHUTTER_2              0x31
+#define UVC_CT_TIS_HDR_VSTEP_1                0x32
+#define UVC_CT_TIS_HDR_VSTEP_2                0x33
+#define UVC_CT_TIS_HDR_VSTEP_3                0x34
+#define UVC_CT_TIS_HDR_VSTEP_4                0x35
+#define UVC_CT_TIS_UART                       0x41
+
+#define TIS_CAMERA_TERMINAL 1
+#define TIS_PROCESSING_UNIT 3
+
 
 /* A.9.5. Processing Unit Control Selectors */
 #define UVC_PU_CONTROL_UNDEFINED			0x00
@@ -122,6 +148,7 @@
 #define UVC_PU_HUE_AUTO_CONTROL				0x10
 #define UVC_PU_ANALOG_VIDEO_STANDARD_CONTROL		0x11
 #define UVC_PU_ANALOG_LOCK_STATUS_CONTROL		0x12
+#define UVC_PU_CONTRAST_AUTO_CONTROL		0x13
 
 /* A.9.7. VideoStreaming Interface Control Selectors */
 #define UVC_VS_CONTROL_UNDEFINED			0x00
@@ -506,6 +533,40 @@ struct UVC_FRAME_UNCOMPRESSED(n) {			\
 	uint8_t  bFrameIntervalType;			\
 	uint32_t dwFrameInterval[n];			\
 } __attribute__ ((packed))
+
+/* Frame Based Payload */
+struct uvc_format_frame_based {
+	uint8_t  bLength;
+	uint8_t  bDescriptorType;
+	uint8_t  bDescriptorSubType;
+	uint8_t  bFormatIndex;
+	uint8_t  bNumFrameDescriptors;
+	uint8_t  guidFormat[16];
+	uint8_t  bBitsPerPixel;
+	uint8_t  bDefaultFrameIndex;
+	uint8_t  bAspectRatioX;
+	uint8_t  bAspectRatioY;
+	uint8_t  bmInterfaceFlags;
+	uint8_t  bCopyProtect;
+	uint8_t  bVariableSize;
+} __attribute__((__packed__));
+
+
+struct uvc_frame_frame_based {
+	uint8_t  bLength;
+	uint8_t  bDescriptorType;
+	uint8_t  bDescriptorSubType;
+	uint8_t  bFrameIndex;
+	uint8_t  bmCapabilities;
+	uint16_t wWidth;
+	uint16_t wHeight;
+	uint32_t dwMinBitRate;
+	uint32_t dwMaxBitRate;
+	uint32_t dwDefaultFrameInterval;
+	uint8_t  bFrameIntervalType;
+	uint32_t dwBytesPerLine;
+	uint32_t dwFrameInterval[];
+} __attribute__((__packed__));
 
 /* MJPEG Payload - 3.1.1. MJPEG Video Format Descriptor */
 struct uvc_format_mjpeg {

@@ -923,17 +923,28 @@ main(int argc, char **argv)
 		}
 	}
 
+	size_t reportBytes = 40;
 	/* Get a report from the device */
+	bool first = true;
 	while ( 1 )
 	{
 		int ret, b;
 		uint8_t curbyte;
 		FD_ZERO( &fds );
 		FD_SET( fd, &fds );
+		if ( first )
+		{
+			char txt[512];
+			memset( txt, 0, 512 );
+			strcpy( txt, "Hello, World!" );
+			int foo = write( fd, txt, 512 );
+			printf( "wrote %d bytes\n", foo );
+			first = false;
+		}
 		ret = select( fd + 1, &fds, NULL, NULL, NULL );
 		if ( ret > 0 && FD_ISSET( fd, &fds ) )
 		{
-			res = read(fd, buf, 16);
+			res = read( fd, buf, reportBytes );
 			if (res < 0)
 			{
 				if ( errno == EIO )

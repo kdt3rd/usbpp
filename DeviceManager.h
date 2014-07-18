@@ -29,7 +29,9 @@
 #include <memory>
 #include <map>
 #include <mutex>
-#include <libusb-1.0/libusb.h>
+#include <condition_variable>
+#include <thread>
+#include "libusb-1.0/libusb.h"
 #include "Device.h"
 
 
@@ -46,7 +48,6 @@ namespace USB
 {
 
 
-
 ////////////////////////////////////////
 
 
@@ -54,6 +55,9 @@ class DeviceManager
 {
 public:
 	typedef std::function<std::shared_ptr<Device> (libusb_device *, const struct libusb_device_descriptor &)> FactoryFunction;
+
+	typedef std::function<void (const std::shared_ptr<Device> &)> NewDeviceFunction;
+	typedef std::function<void (const std::shared_ptr<Device> &)> DeadDeviceFunction;
 
 	DeviceManager( void );
 	~DeviceManager( void );
@@ -63,34 +67,35 @@ public:
 	void registerDevice( uint16_t vendor, uint16_t prod, const FactoryFunction &factory );
 	// Generic class handler
 	void registerClass( uint8_t classID, const FactoryFunction &factory );
-	void start( void );
+	void registerVendor( uint16_t vendID, const FactoryFunction &factory );
+
+	void start( const NewDeviceFunction &newFunc, const DeadDeviceFunction &deadFunc );
 	void shutdown( void );
 
-	bool needDeviceProbe( void );
-	void probeDevices( void );
+protected:
 
+	std::vector<std::shared_ptr<Device>> getAllDevices( void );
+	
 	// NB: will only return the first instance of a particular device,
 	// Given that this is the normal case (people don't have multiple of
 	// the same device usually), we provide that as a convenience
 	// NB #2: You will get un-defined behavior if you keep a pointer to a
 	// device after you call shutdown
 	std::shared_ptr<Device> findDevice( uint16_t vendor, uint16_t prod );
+	std::shared_ptr<Device> findDevice( uint16_t vendor );
 
 	// Gets all the devices with the specified vendor/prod
 	// NB: You will get un-defined behavior if you keep a pointer to a
 	// device after you call shutdown
 	std::vector<std::shared_ptr<Device>> findAllDevices( uint16_t vendor, uint16_t prod );
 
-	// async signal safe, can be called from signal handlers to
-	// terminate event loop
-	void quit( void );
-	inline bool isQuit( void ) const { return myQuitFlag; }
-
-	// blocks until quit is called, processing events from the USB devices
-	void processEventLoop( void );
+	std::vector<std::shared_ptr<Device>> findAllDevices( uint16_t vendor );
 
 private:
-	void dispatchEvent( libusb_transfer *xfer );
+	void probeLoop( void );
+	void probeDevices( void );
+
+	void eventLoop( void );
 
 	void add( libusb_device *dev );
 	void add( libusb_device *dev, const struct libusb_device_descriptor &desc );
@@ -100,11 +105,24 @@ private:
 
 	libusb_context *myContext = nullptr;
 	libusb_hotplug_callback_handle myPlugHandle = 0;
+
+	NewDeviceFunction myNewDeviceFunc;
+	DeadDeviceFunction myDeadDeviceFunc;
+
+	std::thread myProbeThread;
+	std::condition_variable myProbeNotify;
 	std::mutex myMutex;
+
+	std::mutex myEventMutex;
+	std::thread myEventThread;
+	std::condition_variable myEventNotify;
+
 	std::map< libusb_device *, std::shared_ptr<Device> > myDevices;
 	bool myQuitFlag = false;
+
 	std::map<std::pair<uint16_t, uint16_t>, FactoryFunction> mySpecificFactories;
 	std::map<uint8_t, FactoryFunction> myClassFactories;
+	std::map<uint16_t, FactoryFunction> myVendorFactories;
 };
 
 } // namespace usbpp

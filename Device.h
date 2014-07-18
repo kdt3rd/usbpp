@@ -26,13 +26,16 @@
 
 #include <cstdint>
 
-#include <libusb-1.0/libusb.h>
+#include "libusb-1.0/libusb.h"
 #include <functional>
 #include "Exception.h"
 #include "Transfer.h"
 #include <iostream>
 #include <vector>
+#include <map>
 #include <memory>
+#include <mutex>
+#include <string>
 
 
 ////////////////////////////////////////
@@ -61,13 +64,21 @@ public:
 	Device( const Device &o ) = delete;
 	Device &operator=( const Device &o ) = delete;
 
+	void setContext( libusb_context *ctxt ) { myContext = ctxt; }
+
 	void setDevice( libusb_device *dev );
 	void setDevice( libusb_device *dev, const struct libusb_device_descriptor &desc );
 	inline libusb_device *getDevice( void ) const { return myDevice; }
 
 	bool isValid( void ) const { return myDevice != nullptr; }
+
+	const std::string &getProductName( void ) const { return myProduct; }
+	const std::string &getManufacturer( void ) const { return myManufacturer; }
+	const std::string &getSerialNumber( void ) const { return mySerialNumber; }
+
 	const struct libusb_device_descriptor &desc( void ) const { return myDescriptor; }
 
+	inline bool matches( uint16_t v ) const { return myDescriptor.idVendor == v; }
 	inline bool matches( uint16_t v, uint16_t p ) const { return myDescriptor.idVendor == v && myDescriptor.idProduct == p; }
 
 	void claimInterfaces( void );
@@ -80,6 +91,11 @@ public:
 
 	void dumpInfo( std::ostream &os );
 
+	void dispatchEvent( libusb_transfer *xfer );
+
+	static constexpr uint8_t endpoint_in( uint8_t i ) { return LIBUSB_ENDPOINT_IN | (LIBUSB_ENDPOINT_ADDRESS_MASK & i); }
+	static constexpr uint8_t endpoint_out( uint8_t i ) { return LIBUSB_ENDPOINT_OUT | (LIBUSB_ENDPOINT_ADDRESS_MASK & i); }
+
 protected:
 	// returns true to requeue transfer (i.e. for input interrupt transfers)
 	virtual bool handleEvent( int endpoint, uint8_t *buf, int buflen, libusb_transfer *xfer ) = 0;
@@ -88,18 +104,28 @@ protected:
 
 	virtual std::shared_ptr<AsyncTransfer> createTransfer( const struct libusb_endpoint_descriptor &epDesc );
 
+	virtual void parseInterface( uint8_t inum, const struct libusb_interface_descriptor &ifacedesc );
+
 	virtual void dumpExtraInterfaceInfo( std::ostream &os, const struct libusb_interface_descriptor &iface );
 
 	void openHandle( void );
-	void closeHandle( void );
+	virtual void closeHandle( void );
 
 	std::string pullString( uint8_t desc_idx );
-	void dispatchEvent( libusb_transfer *xfer );
 
+	libusb_context *myContext = nullptr;
 	libusb_device *myDevice = nullptr;
 	libusb_device_handle *myHandle = nullptr;
 	struct libusb_device_descriptor myDescriptor;
 	std::vector<libusb_config_descriptor *> myConfigs;
+	libusb_bos_descriptor *myBOS = nullptr;
+	libusb_usb_2_0_extension_descriptor *myUSB2Ext = nullptr;
+	libusb_ss_usb_device_capability_descriptor *mySSDesc = nullptr;
+	std::map<uint8_t, libusb_ss_endpoint_companion_descriptor *> mySSEndpointCompanion;
+
+	int mySpeed = 0;
+
+	size_t myCurConfig = 0;
 	std::vector<uint8_t> myClaimedInterfaces;
 	std::vector< std::shared_ptr<AsyncTransfer> > myInputs;
 	std::string myManufacturer;

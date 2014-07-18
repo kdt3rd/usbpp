@@ -26,6 +26,8 @@
 #include "Exception.h"
 #include <iostream>
 #include <iomanip>
+#include "DeviceManager.h"
+#include <algorithm>
 
 
 ////////////////////////////////////////
@@ -38,8 +40,8 @@ namespace USB
 ////////////////////////////////////////
 
 
-AsyncTransfer::AsyncTransfer( void )
-		: myXfer( libusb_alloc_transfer( 0 ) )
+AsyncTransfer::AsyncTransfer( libusb_context *ctxt, int numPackets )
+		: myContext( ctxt ), myXfer( libusb_alloc_transfer( numPackets ) )
 {
 }
 
@@ -50,6 +52,8 @@ AsyncTransfer::AsyncTransfer( void )
 AsyncTransfer::~AsyncTransfer( void )
 {
 	cancel();
+	wait();
+
 	libusb_free_transfer( myXfer );
 }
 
@@ -70,11 +74,15 @@ AsyncTransfer::setCallback( const std::function<void (libusb_transfer *)> &func 
 void
 AsyncTransfer::submit( void )
 {
-	if ( myXferSubmit )
+	if ( inFlight() )
+	{
+//		std::cout << "transfer already submitted, skipping submit" << std::endl;
 		return;
+	}
 
+	myComplete = 0;
+	myAmountTransferred = 0;
 	check_error( libusb_submit_transfer( myXfer ) );
-	myXferSubmit = true;
 }
 
 
@@ -84,13 +92,24 @@ AsyncTransfer::submit( void )
 void
 AsyncTransfer::cancel( void )
 {
-	if ( myXferSubmit )
-	{
+	if ( inFlight() )
 		libusb_cancel_transfer( myXfer );
-		myXferSubmit = false;
+}
+
+
+////////////////////////////////////////
+
+
+int
+AsyncTransfer::wait( void )
+{
+	if ( myXfer )
+	{
+		while ( inFlight() )
+			libusb_handle_events_completed( myContext, getCompleterReference() );
 	}
-	// How do we drain any pending prior to destroying the transfer?
-	// it seems to crash if we destroy too quickly...
+
+	return myAmountTransferred;
 }
 
 
@@ -98,12 +117,73 @@ AsyncTransfer::cancel( void )
 
 
 void
-AsyncTransfer::dispatchCB( void )
+AsyncTransfer::transfer_callback( libusb_transfer *xfer )
 {
-	if ( myXferSubmit && myCallBack )
+	if ( xfer->status == LIBUSB_TRANSFER_TIMED_OUT )
 	{
-		myXferSubmit = false;
-		myCallBack( myXfer );
+		libusb_submit_transfer( xfer );
+		return;
+	}
+
+	AsyncTransfer *t = reinterpret_cast<AsyncTransfer *>( xfer->user_data );
+	t->handleCallback();
+}
+
+
+////////////////////////////////////////
+
+
+void
+AsyncTransfer::handleCallback( void )
+{
+	myComplete = 1;
+
+	switch ( myXfer->status )
+	{
+		case LIBUSB_TRANSFER_COMPLETED:
+			myAmountTransferred = myXfer->actual_length;
+			break;
+
+		case LIBUSB_TRANSFER_ERROR:
+			std::cout << "ERROR: " << type() << " TRANSFER ERROR" << std::endl;
+			break;
+
+//		case LIBUSB_TRANSFER_TIMED_OUT:
+//			return;
+
+		case LIBUSB_TRANSFER_CANCELLED:
+			return;
+
+		case LIBUSB_TRANSFER_STALL:
+			std::cout << "ERROR: " << type() << " TRANSFER STALL" << std::endl;
+			break;
+
+		case LIBUSB_TRANSFER_NO_DEVICE:
+			std::cout << "ERROR: " << type() << " LOST DEVICE" << std::endl;
+			break;
+
+		case LIBUSB_TRANSFER_OVERFLOW:
+			std::cout << "ERROR: " << type() << " TRANSFER OVERFLOW" << std::endl;
+			break;
+
+		default:
+			std::cout << "ERROR: Unknown transfer status: " << int(myXfer->status) << std::endl;
+			return;
+	}
+
+
+	try
+	{
+		if ( myCallBack )
+			myCallBack( myXfer );
+	}
+	catch ( std::exception &e )
+	{
+		std::cerr << "ERROR in dispatch transfer CB: '" << e.what() << "', ignoring because in C routine" << std::endl;
+	}
+	catch ( ... )
+	{
+		std::cerr << "ERROR in dispatch transfer CB, what to do? In C routine, unable to propagate exception..." << std::endl;
 	}
 }
 
@@ -111,8 +191,105 @@ AsyncTransfer::dispatchCB( void )
 ////////////////////////////////////////
 
 
-InterruptTransfer::InterruptTransfer( void )
-		: AsyncTransfer()
+ControlTransfer::ControlTransfer( libusb_context *ctxt )
+		: AsyncTransfer( ctxt )
+{
+}
+
+
+////////////////////////////////////////
+
+
+ControlTransfer::~ControlTransfer( void )
+{
+	if ( myData )
+		free( myData );
+}
+
+
+////////////////////////////////////////
+
+
+void
+ControlTransfer::fill( libusb_device_handle *handle,
+					   uint8_t bmRequestType, uint8_t bRequest,
+					   uint16_t wValue, uint16_t wIndex, uint16_t wLength,
+					   void *buf )
+{
+	bool needReinit = false;
+	size_t bytesNeeded = LIBUSB_CONTROL_SETUP_SIZE + wLength;
+	if ( myDataLen < bytesNeeded )
+	{
+		if ( myData )
+			free( myData );
+
+		myData = reinterpret_cast<uint8_t *>( malloc( bytesNeeded ) );
+		myDataLen = bytesNeeded;
+		needReinit = true;
+	}
+
+	struct libusb_control_setup *ctrlSet = reinterpret_cast<struct libusb_control_setup *>( myData );
+
+	libusb_fill_control_setup( myData, bmRequestType, bRequest,
+							   wValue, wIndex, wLength );
+
+	if ( (bmRequestType & LIBUSB_ENDPOINT_DIR_MASK) == LIBUSB_ENDPOINT_OUT )
+	{
+		uint8_t *dataOut = myData + LIBUSB_CONTROL_SETUP_SIZE;
+		uint8_t *src = reinterpret_cast<uint8_t *>( buf );
+		std::copy( src, src + wLength, dataOut );
+		myDestBuffer = nullptr;
+		myDestLen = 0;
+	}
+	else
+	{
+		myDestLen = wLength;
+		myDestBuffer = buf;
+	}
+
+	if ( needReinit )
+		init( handle, 0 );
+}
+
+
+////////////////////////////////////////
+
+
+void
+ControlTransfer::init( libusb_device_handle *handle, uint8_t endPoint )
+{
+	if ( ! myData )
+		throw std::runtime_error( "Control transfers must be filled prior to initialization" );
+
+	libusb_fill_control_transfer( myXfer, handle, myData,
+								  &AsyncTransfer::transfer_callback,
+								  this, 1000 );
+	// let's not auto-free this one
+	myXfer->flags = 0;
+}
+
+
+////////////////////////////////////////
+
+
+void
+ControlTransfer::handleCallback( void )
+{
+	if ( myXfer->status == LIBUSB_TRANSFER_COMPLETED && myDestBuffer )
+	{
+		uint8_t *inBuf = myData + LIBUSB_CONTROL_SETUP_SIZE;
+		uint8_t *out = reinterpret_cast<uint8_t *>( myDestBuffer );
+		std::copy( inBuf, inBuf + myDestLen, out );
+	}
+	AsyncTransfer::handleCallback();
+}
+
+
+////////////////////////////////////////
+
+
+InterruptTransfer::InterruptTransfer( libusb_context *ctxt, uint16_t maxPacket )
+		: AsyncTransfer( ctxt ), myMaxPacketSize( maxPacket )
 {
 }
 
@@ -131,80 +308,27 @@ InterruptTransfer::~InterruptTransfer( void )
 
 
 void
-InterruptTransfer::init( libusb_device_handle *handle, const struct libusb_endpoint_descriptor &epDesc )
+InterruptTransfer::init( libusb_device_handle *handle, uint8_t endPoint )
 {
-	uint8_t endPointNum = (epDesc.bEndpointAddress & 0xF);
-	uint16_t maxPacket = epDesc.wMaxPacketSize;
+	uint8_t endPointNum = (endPoint & 0xF);
 
-	myData = (uint8_t *)malloc( maxPacket );
+	myData = (uint8_t *)malloc( myMaxPacketSize );
 	libusb_fill_interrupt_transfer( myXfer, handle,
 									( endPointNum | LIBUSB_ENDPOINT_IN ),
 									myData,
-									int(maxPacket),
-									&InterruptTransfer::recvInterrupt,
-									this, 1000 );
+									int(myMaxPacketSize),
+									&AsyncTransfer::transfer_callback,
+									this, 0 );
 	myXfer->flags = LIBUSB_TRANSFER_FREE_BUFFER;
 }
 
 
-////////////////////////////////////////
-
-
-void
-InterruptTransfer::recvInterrupt( libusb_transfer *xfer )
-{
-	InterruptTransfer *inp = reinterpret_cast<InterruptTransfer *>( xfer->user_data );
-	switch ( xfer->status )
-	{
-		case LIBUSB_TRANSFER_COMPLETED:
-			break;
-
-		case LIBUSB_TRANSFER_ERROR:
-			std::cout << "ERROR: TRANSFER ERROR" << std::endl;
-			return;
-
-		case LIBUSB_TRANSFER_TIMED_OUT:
-			libusb_submit_transfer( xfer );
-			return;
-
-		case LIBUSB_TRANSFER_CANCELLED:
-			return;
-
-		case LIBUSB_TRANSFER_STALL:
-			std::cout << "ERROR: TRANSFER STALL" << std::endl;
-			return;
-
-		case LIBUSB_TRANSFER_NO_DEVICE:
-			std::cout << "ERROR: LOST DEVICE" << std::endl;
-			return;
-
-		case LIBUSB_TRANSFER_OVERFLOW:
-			std::cout << "ERROR: TRANSFER OVERFLOW" << std::endl;
-			return;
-
-		default:
-			std::cout << "ERROR: Unknown transfer status: " << int(xfer->status) << std::endl;
-			return;
-	}
-
-
-	try
-	{
-		inp->dispatchCB();
-	}
-	catch ( ... )
-	{
-		std::cerr << "ERROR in dispatch transfer CB, what to do? In C routine..." << std::endl;
-	}
-}
-
-
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 
-BulkTransfer::BulkTransfer( size_t bufSize )
-		: AsyncTransfer(), myBufSize( bufSize )
+BulkTransfer::BulkTransfer( libusb_context *ctxt, size_t bufSize )
+		: AsyncTransfer( ctxt ), myBufSize( bufSize )
 {
 }
 
@@ -221,16 +345,16 @@ BulkTransfer::~BulkTransfer( void )
 
 
 void
-BulkTransfer::init( libusb_device_handle *handle, const struct libusb_endpoint_descriptor &epDesc )
+BulkTransfer::init( libusb_device_handle *handle, uint8_t endPoint )
 {
-	uint8_t endPointNum = (epDesc.bEndpointAddress & 0xF);
+	uint8_t endPointNum = (endPoint & 0xF);
 	myData = (uint8_t *)malloc( myBufSize );
 	libusb_fill_bulk_transfer( myXfer, handle,
 							   ( endPointNum | LIBUSB_ENDPOINT_IN ),
 							   myData,
 							   int(myBufSize),
-							   &BulkTransfer::recvBulk,
-							   this, 1000 );
+							   &AsyncTransfer::transfer_callback,
+							   this, 0 );
 	myXfer->flags = LIBUSB_TRANSFER_FREE_BUFFER;
 }
 
@@ -239,52 +363,63 @@ BulkTransfer::init( libusb_device_handle *handle, const struct libusb_endpoint_d
 
 
 void
-BulkTransfer::recvBulk( libusb_transfer *xfer )
+BulkTransfer::send( libusb_device_handle *handle,
+					unsigned char endpoint,
+					unsigned char *buffer, int length,
+					unsigned int timeout )
 {
-	BulkTransfer *inp = reinterpret_cast<BulkTransfer *>( xfer->user_data );
-	switch ( xfer->status )
-	{
-		case LIBUSB_TRANSFER_COMPLETED:
-			break;
+	if ( length > myBufSize )
+		throw std::runtime_error( "Send buffer too large for max packet size" );
 
-		case LIBUSB_TRANSFER_ERROR:
-			std::cout << "ERROR: BULK TRANSFER ERROR" << std::endl;
-			return;
+	libusb_fill_bulk_transfer( myXfer, handle, endpoint,
+							   buffer, length,
+							   &AsyncTransfer::transfer_callback,
+							   this, timeout );
 
-		case LIBUSB_TRANSFER_TIMED_OUT:
-			libusb_submit_transfer( xfer );
-			return;
-
-		case LIBUSB_TRANSFER_CANCELLED:
-			return;
-
-		case LIBUSB_TRANSFER_STALL:
-			std::cout << "ERROR: BULK TRANSFER STALL" << std::endl;
-			return;
-
-		case LIBUSB_TRANSFER_NO_DEVICE:
-			std::cout << "ERROR: LOST BULK DEVICE" << std::endl;
-			return;
-
-		case LIBUSB_TRANSFER_OVERFLOW:
-			std::cout << "ERROR: BULK TRANSFER OVERFLOW" << std::endl;
-			return;
-
-		default:
-			std::cout << "ERROR: Unknown transfer status: " << int(xfer->status) << std::endl;
-			return;
-	}
-
-
-	try
-	{
-		inp->dispatchCB();
-	}
-	catch ( ... )
-	{
-		std::cerr << "ERROR in dispatch transfer CB, what to do? In C routine..." << std::endl;
-	}
+	submitAndWait();
 }
+
+
+////////////////////////////////////////
+
+
+ISOTransfer::ISOTransfer( libusb_context *ctxt, int numPackets, size_t bufSize, size_t maxPacket )
+		: AsyncTransfer( ctxt, numPackets ),
+		  myNumPackets( numPackets ), myBufSize( bufSize ), myMaxPacketSize( maxPacket )
+{
+}
+
+
+////////////////////////////////////////
+
+
+ISOTransfer::~ISOTransfer( void )
+{
+}
+
+
+////////////////////////////////////////
+
+
+void
+ISOTransfer::init( libusb_device_handle *handle, uint8_t endPoint )
+{
+	uint8_t endPointNum = (endPoint & 0xF);
+	myData = (uint8_t *)malloc( myBufSize );
+	libusb_fill_iso_transfer( myXfer, handle,
+							  ( endPointNum | LIBUSB_ENDPOINT_IN ),
+							  myData,
+							  int(myBufSize),
+							  myNumPackets,
+							  &AsyncTransfer::transfer_callback,
+							  this, 0 );
+	libusb_set_iso_packet_lengths( myXfer, myMaxPacketSize );
+	myXfer->flags = LIBUSB_TRANSFER_FREE_BUFFER;
+}
+
+
+////////////////////////////////////////
+
 
 } // USB
 

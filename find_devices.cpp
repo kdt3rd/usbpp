@@ -25,6 +25,8 @@
 #include "DeviceManager.h"
 #include "Exception.h"
 #include "UVCDevice.h"
+#include "HIDDevice.h"
+#include "ORBOptronixDevice.h"
 
 #include <signal.h>
 
@@ -32,19 +34,79 @@
 ////////////////////////////////////////
 
 
-static const uint16_t kCelestron = 0x199e;
-static const uint16_t kNexImage5 = 0x8207;
-static USB::DeviceManager *theMgr = nullptr;
+using namespace USB;
+
+//static const uint16_t kCelestron = 0x199e;
+//static const uint16_t kNexImage5 = 0x8207;
+
+static std::vector<std::shared_ptr<Device>> theDevs;
 
 
 ////////////////////////////////////////
 
 
 static void
+addDevice( const std::shared_ptr<Device> &dev )
+{
+	if ( dev )
+	{
+		std::cout << "New Device:\n";
+		dev->dumpInfo( std::cout );
+		std::cout << "\n" << std::endl;
+		theDevs.push_back( dev );
+
+		ORBOptronixDevice *ptr = dynamic_cast<ORBOptronixDevice *>( dev.get() );
+		if ( ptr )
+		{
+			ptr->captureData();
+		}
+	}
+}
+
+
+////////////////////////////////////////
+
+
+static void
+removeDevice( const std::shared_ptr<USB::Device> &dev )
+{
+	if ( dev )
+	{
+		for ( auto i = theDevs.begin(); i != theDevs.end(); ++i )
+		{
+			if ( (*i) == dev )
+			{
+				std::cout << "Device " << dev->getProductName() << " removed" << std::endl;
+				theDevs.erase( i );
+				return;
+			}
+		}
+	}
+}
+
+
+////////////////////////////////////////
+
+
+static bool theQuit = false;
+
+static void
 sighandler( int signum )
 {
-	if ( theMgr )
-		theMgr->quit();
+	theQuit = true;
+}
+
+
+////////////////////////////////////////
+
+
+static void
+processLoop( void )
+{
+	while ( ! theQuit )
+	{
+		sched_yield();
+	}
 }
 
 
@@ -64,26 +126,23 @@ main( int argc, char *argv[] )
 	sigaction(SIGTERM, &sigact, NULL);
 	sigaction(SIGQUIT, &sigact, NULL);
 
-	using namespace USB;
-
 	DeviceManager mgr;
-	theMgr = &mgr;
+
 	try
 	{
-		mgr.registerDevice( kCelestron, kNexImage5,
-							&UVCDevice::factory );
+		// hrm, this doesn't seem to work, the device reports a class
+		// of 0xfe
+//		mgr.registerClass( LIBUSB_CLASS_VIDEO, &UVCDevice::factory );
+//		mgr.registerClass( LIBUSB_CLASS_IMAGE, &UVCDevice::factory );
+//		mgr.registerVendor( kCelestron, &UVCDevice::factory );
+//		mgr.registerDevice( kCelestron, kNexImage5, &UVCDevice::factory );
+		mgr.registerDevice( 0x04d8, 0xfdcf, &HIDDevice::factory );
+		mgr.registerDevice( 0x0403, 0xac60, &ORBOptronixDevice::factory );
+		mgr.start( addDevice, removeDevice );
 
-		mgr.start();
+		processLoop();
 
-		std::shared_ptr<Device> neximage = mgr.findDevice( kCelestron, kNexImage5 );
-		if ( neximage )
-		{
-			UVCDevice *dev = reinterpret_cast<UVCDevice *>( neximage.get() );
-			std::cout << "Starting Video:" << std::endl;
-			size_t fmt = 0, frm = 0;
-			dev->startVideo( fmt, frm );
-		}
-		mgr.processEventLoop();
+		std::cout << "exiting..." << std::endl;
 	}
 	catch ( usb_error &e )
 	{
@@ -98,8 +157,8 @@ main( int argc, char *argv[] )
 		rval = -1;
 	}
 
+	theDevs.clear();
 	mgr.shutdown();
-	theMgr = nullptr;
 
 	return rval;
 }

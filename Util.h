@@ -44,16 +44,17 @@ namespace USB
 
 template <typename T>
 inline void
-dumpHex( std::ostream &os, const char *prefix, T val, bool includeInt = false )
+dumpHex( std::ostream &os, const char *prefix, T val, bool includeInt = false, bool eol = true )
 {
 	os << prefix << ": 0x" << std::setfill( '0' ) << std::setw(sizeof(T)*2) << std::hex << int(val) << std::dec;
 	if ( includeInt )
 		os << " (" << int(val) << ")";
-	os << std::endl;
+	if ( eol )
+		os << std::endl;
 }
 
 inline void
-dumpHex( std::ostream &os, const char *prefix, const unsigned char *buf, size_t n )
+dumpHexBuf( std::ostream &os, const char *prefix, const unsigned char *buf, size_t n, bool asChars = true )
 {
 	os << prefix << ": {";
 	for ( size_t i = 0; i < n; ++i )
@@ -61,12 +62,77 @@ dumpHex( std::ostream &os, const char *prefix, const unsigned char *buf, size_t 
 		if ( i > 0 )
 			std::cout << ',';
 		os << " 0x" << std::setfill( '0' ) << std::setw(2) << std::hex << int(buf[i]) << std::dec;
-		if ( isascii( buf[i] ) )
-			os << " '" << char(buf[i]) << "'";
+		if ( asChars && isascii( buf[i] ) && buf[i] > 6 )
+		{
+			if ( buf[i] == '\n' )
+				os << " '\\n'";
+			else if ( buf[i] == '\r' )
+				os << " '\\r'";
+			else if ( buf[i] == '\t' )
+				os << " '\\t'";
+			else if ( buf[i] == '\a' )
+				os << " '\\a'";
+			else if ( buf[i] == '\b' )
+				os << " '\\b'";
+			else if ( buf[i] == '\v' )
+				os << " '\\v'";
+			else if ( buf[i] == '\f' )
+				os << " '\\f'";
+			else if ( isprint( buf[i] ) )
+				os << " '" << char(buf[i]) << "'";
+			os << " (" << int(buf[i]) << ")";
+		}
 		else
 			os << " (" << int(buf[i]) << ")";
 	}
 	os << " }" << std::endl;
+}
+
+inline void
+dumpHexRaw( std::ostream &os, const char *prefix, const uint8_t *buf, size_t n, bool eol = true )
+{
+	os << prefix << ": {";
+	for ( size_t i = 0; i < n; ++i )
+	{
+		os << ' ' << std::setfill( '0' ) << std::setw(2) << std::hex << int(buf[i]) << std::dec;
+	}
+	os << " }";
+	if ( eol )
+		os << std::endl;
+}
+
+inline void
+dumpGUID( std::ostream &os, const char *prefix, const uint8_t buf[16], bool doFourCC = false )
+{
+	os << prefix << ": {";
+	for ( size_t i = 0; i < 16; ++i )
+	{
+		if ( doFourCC && i < 4 )
+		{
+			if ( i > 0 )
+				os << ",";
+			if ( isprint( buf[i] ) )
+				os << '\'' << char(buf[i]) << '\'';
+			else
+				os << '(' << int(buf[i]) << ')';
+		}
+		else
+			os << std::setfill( '0' ) << std::setw(2) << std::hex << int(buf[i]) << std::dec;
+		if ( i == 3 || i == 5 || i == 7 || i == 9 )
+			os << '-';
+	}
+	os << "}" << std::endl;
+}
+
+inline bool
+matchGUID( const uint8_t buf[16], const uint8_t guid[16] )
+{
+	for ( size_t i = 0; i < 16; ++i )
+	{
+		if ( buf[i] != guid[i] )
+			return false;
+	}
+	return true;
 }
 
 inline void
