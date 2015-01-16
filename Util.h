@@ -53,6 +53,19 @@ dumpHex( std::ostream &os, const char *prefix, T val, bool includeInt = false, b
 		os << std::endl;
 }
 
+template <typename T>
+inline void
+dumpHexNamed( std::ostream &os, const char *prefix, T val, bool includeInt = false, bool eol = true, const char *name = nullptr )
+{
+	os << prefix << ": 0x" << std::setfill( '0' ) << std::setw(sizeof(T)*2) << std::hex << int(val) << std::dec;
+	if ( includeInt )
+		os << " (" << int(val) << ")";
+	if ( name )
+		os << " '" << name << "'";
+	if ( eol )
+		os << std::endl;
+}
+
 inline void
 dumpHexBuf( std::ostream &os, const char *prefix, const unsigned char *buf, size_t n, bool asChars = true )
 {
