@@ -120,6 +120,13 @@ public:
 
 	virtual void init( libusb_device_handle *handle, uint8_t endPoint );
 
+	void fill( libusb_device_handle *handle, uint8_t endPoint,
+			   unsigned char *buffer, int length,
+			   unsigned int timeout = 1000 );
+	void send( libusb_device_handle *handle, uint8_t endPoint,
+			   unsigned char *buffer, int length,
+			   unsigned int timeout = 1000 );
+
 protected:
 	virtual const char *type( void ) const { return "INTERRUPT"; }
 

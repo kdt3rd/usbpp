@@ -323,6 +323,43 @@ InterruptTransfer::init( libusb_device_handle *handle, uint8_t endPoint )
 }
 
 
+////////////////////////////////////////
+
+
+void
+InterruptTransfer::fill( libusb_device_handle *handle, uint8_t endPoint,
+						 unsigned char *buffer, int length,
+						 unsigned int timeout )
+{
+	if ( ! myData )
+		myData = (uint8_t *)malloc( myMaxPacketSize );
+	std::copy( buffer, buffer + std::min( length, int(myMaxPacketSize) ), myData );
+	if ( length < myMaxPacketSize )
+		std::fill( buffer + length, buffer + myMaxPacketSize, uint8_t(0) );
+
+	libusb_fill_interrupt_transfer( myXfer, handle,
+									endPoint,
+									myData,
+									int(myMaxPacketSize),
+									&AsyncTransfer::transfer_callback,
+									this, timeout );
+	myXfer->flags = LIBUSB_TRANSFER_FREE_BUFFER;
+}
+
+
+////////////////////////////////////////
+
+
+void
+InterruptTransfer::send( libusb_device_handle *handle, uint8_t endPoint,
+						 unsigned char *buffer, int length,
+						 unsigned int timeout )
+{
+	fill( handle, endPoint, buffer, length, timeout );
+	submitAndWait();
+}
+
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
