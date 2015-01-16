@@ -27,8 +27,11 @@
 #include "UVCDevice.h"
 #include "HIDDevice.h"
 #include "ORBOptronixDevice.h"
+#include "TangentWaveDevice.h"
 
 #include <signal.h>
+#include <mutex>
+#include <condition_variable>
 
 
 ////////////////////////////////////////
@@ -60,6 +63,13 @@ addDevice( const std::shared_ptr<Device> &dev )
 		{
 			ptr->captureData();
 		}
+
+		TangentWaveDevice *twPtr = dynamic_cast<TangentWaveDevice *>( dev.get() );
+		if ( twPtr )
+		{
+			for ( uint8_t line = 0; line < 5; ++line )
+				twPtr->setText( 0, line, 0, "Hello, world!" );
+		}
 	}
 }
 
@@ -89,11 +99,15 @@ removeDevice( const std::shared_ptr<USB::Device> &dev )
 
 
 static bool theQuit = false;
+static std::mutex theQuitMutex;
+static std::condition_variable theQuitCond;
 
 static void
 sighandler( int signum )
 {
+	std::unique_lock<std::mutex> lk( theQuitMutex );
 	theQuit = true;
+	theQuitCond.notify_all();
 }
 
 
@@ -103,9 +117,12 @@ sighandler( int signum )
 static void
 processLoop( void )
 {
-	while ( ! theQuit )
+	while ( true )
 	{
-		sched_yield();
+		std::unique_lock<std::mutex> lk( theQuitMutex );
+		theQuitCond.wait( lk );
+		if ( theQuit )
+			break;
 	}
 }
 
@@ -136,13 +153,13 @@ main( int argc, char *argv[] )
 //		mgr.registerClass( LIBUSB_CLASS_IMAGE, &UVCDevice::factory );
 //		mgr.registerVendor( kCelestron, &UVCDevice::factory );
 //		mgr.registerDevice( kCelestron, kNexImage5, &UVCDevice::factory );
-		mgr.registerDevice( 0x04d8, 0xfdcf, &HIDDevice::factory );
-		mgr.registerDevice( 0x0403, 0xac60, &ORBOptronixDevice::factory );
+		mgr.registerDevice( 0x04d8, 0xfdcf, &TangentWaveDevice::factory );
+//		mgr.registerDevice( 0x0403, 0xac60, &ORBOptronixDevice::factory );
 		mgr.start( addDevice, removeDevice );
 
 		processLoop();
 
-		std::cout << "exiting..." << std::endl;
+		std::cout << "\nexiting..." << std::endl;
 	}
 	catch ( usb_error &e )
 	{
