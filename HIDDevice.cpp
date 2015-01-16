@@ -29,6 +29,70 @@
 ////////////////////////////////////////
 
 
+namespace
+{
+
+static const char *
+globalTagName( uint8_t gTag )
+{
+	switch ( (gTag >> 4) )
+	{
+		case 0x0: return "Usage Page";
+		case 0x1: return "Logical Minimum";
+		case 0x2: return "Logical Maximum";
+		case 0x3: return "Physical Minimum";
+		case 0x4: return "Physical Maximum";
+		case 0x5: return "Unit Exponent";
+		case 0x6: return "Unit";
+		case 0x7: return "Report Size";
+		case 0x8: return "Report ID";
+		case 0x9: return "Report Count";
+		case 0xa: return "Push";
+		case 0xb: return "Pop";
+	}
+	return "Reserved";
+}
+
+static const char *
+localTagName( uint8_t lTag )
+{
+	switch ( (lTag >> 4) )
+	{
+		case 0x0: return "Usage";
+		case 0x1: return "Usage Minimum";
+		case 0x2: return "Usage Maximum";
+		case 0x3: return "Designator Index";
+		case 0x4: return "Designator Minimum";
+		case 0x5: return "Designator Maximum";
+		case 0x7: return "String Index";
+		case 0x8: return "String Minimum";
+		case 0x9: return "String Maximum";
+		case 0xa: return "Report Count";
+	}
+	return "Reserved";
+}
+
+static void
+extractAndReportValue( std::ostream &os, const char *prefix, const uint8_t *data, uint8_t len )
+{
+	switch ( len )
+	{
+		case 0: os << prefix << " (no data)" << std::endl; break;
+		case 1: USB::dumpHex( os, prefix, data[0], true ); break;
+		case 2: USB::dumpHex( os, prefix, *( reinterpret_cast<const uint16_t *>( data ) ), true ); break;
+		case 4: USB::dumpHex( os, prefix, *( reinterpret_cast<const uint32_t *>( data ) ), true ); break;
+		default:
+			USB::dumpHexRaw( os, prefix, data, len );
+			break;
+	}
+}
+
+} // empty namespace
+
+
+////////////////////////////////////////
+
+
 namespace USB
 {
 
@@ -73,7 +137,7 @@ HIDDevice::~HIDDevice( void )
 std::shared_ptr<Device>
 HIDDevice::factory( libusb_device *dev, const struct libusb_device_descriptor &desc )
 {
-	return std::shared_ptr<Device>( new HIDDevice( dev, desc ) );
+	return std::make_shared<HIDDevice>( dev, desc );
 }
 
 
@@ -84,6 +148,7 @@ bool
 HIDDevice::handleEvent( int endpoint, uint8_t *buf, int buflen, libusb_transfer *xfer )
 {
 	std::cout << "HIDDevice::handleEvent( " << endpoint << ", " << buflen << " )" << std::endl;
+	dumpHexBuf( std::cout, " -> ", buf, buflen, false );
 	return true;
 }
 
@@ -300,16 +365,16 @@ HIDDevice::dumpReport( std::ostream &os, const uint8_t *reportDesc, size_t rSize
 				switch ( bTag )
 				{
 					case 0x80: // input
-						dumpHex( os, "                  [MAIN] Input", reportDesc[i + 1] );
+						extractAndReportValue( os, "                  [MAIN] Input", reportDesc + i + key_size, data_len );
 						break;
 					case 0x90: // output
-						dumpHex( os, "                  [MAIN] Output", reportDesc[i + 1] );
+						extractAndReportValue( os, "                  [MAIN] Output", reportDesc + i + key_size, data_len );
 						break;
 					case 0xa0: // collection
-						dumpHex( os, "                  [MAIN] Collection", reportDesc[i + 1] );
+						extractAndReportValue( os, "                  [MAIN] Collection", reportDesc + i + key_size, data_len );
 						break;
 					case 0xb0: // feature
-						dumpHex( os, "                  [MAIN] Feature", reportDesc[i + 1] );
+						extractAndReportValue( os, "                  [MAIN] Feature", reportDesc + i + key_size, data_len );
 						break;
 					case 0xc0: // end collection
 						break;
@@ -321,10 +386,12 @@ HIDDevice::dumpReport( std::ostream &os, const uint8_t *reportDesc, size_t rSize
 				}
 				break;
 			case 0x4: // global
-				dumpHex( os, "                  [Global] Tag", bTag, true );
+				dumpHexNamed( os, "                  [Global] Tag", bTag, true, false, globalTagName( bTag ) );
+				extractAndReportValue( os, " value", reportDesc + i + key_size, data_len );
 				break;
 			case 0x8: // local
-				dumpHex( os, "                  [Local] Tag", bTag, true );
+				dumpHexNamed( os, "                  [Local] Tag", bTag, true, false, localTagName( bTag ) );
+				extractAndReportValue( os, " value", reportDesc + i + key_size, data_len );
 				break;
 			case 0xc: // reserved
 				dumpHex( os, "                  [RESERVED] Tag", bTag, true );
