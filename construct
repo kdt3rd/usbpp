@@ -1,0 +1,18 @@
+
+BuildConfiguration{ name="Build", optimization="optdebug" }
+DefaultConfiguration( "Build" )
+
+USBX = assert( ExternalLibrary( "libusb-1.0" ), "libusb required" )
+
+EnableLanguages( "c++11" )
+SetOption( "threads", "on" )
+
+src = Compile( "Control.cpp", "Exception.cpp", "Logger.cpp", "Stream.cpp",
+		"Transfer.cpp", "Device.cpp", "DeviceManager.cpp", "HIDDevice.cpp",
+		"ORBOptronixDevice.cpp", "TangentWaveDevice.cpp", "UVCDevice.cpp" )
+
+USBPP = Library( "usbpp", src, USBX )
+
+hid_info = Executable( "hid_info", "hid_info.cpp" )
+find_devices = Executable( "find_devices", "find_devices.cpp", USBPP )
+
