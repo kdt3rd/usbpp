@@ -41,6 +41,7 @@
 #include "Util.h"
 #include "Logger.h"
 #include <functional>
+#include <unistd.h>
 
 
 ////////////////////////////////////////
@@ -154,14 +155,17 @@ Device::claimInterfaces( void )
 					error() << "Unable to claim interface " << int(inum) << ": "
 							  << libusb_error_name( err ) << " - "
 							  << libusb_strerror( ec ) << send;
+					throw;
 				}
 				catch ( std::exception &e )
 				{
 					error() << "Unable to claim interface " << int(inum) << ": " << e.what() << send;
+					throw;
 				}
 				catch ( ... )
 				{
 					error() << "Unable to claim interface " << int(inum) << send;
+					throw;
 				}
 			}
 		}
@@ -473,6 +477,7 @@ Device::openHandle( void )
 	myInputs.clear();
 
 	libusb_set_auto_detach_kernel_driver( myHandle, 1 );
+
 	myManufacturer = pullString( myDescriptor.iManufacturer );
 	myProduct = pullString( myDescriptor.iProduct );
 	mySerialNumber = pullString( myDescriptor.iSerialNumber );

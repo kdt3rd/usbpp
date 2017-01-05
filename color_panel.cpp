@@ -1,7 +1,5 @@
-// usb_neximage.cpp -*- C++ -*-
-
 //
-// Copyright (c) 2013 Kimball Thurston
+// Copyright (c) 2017 Kimball Thurston
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -22,12 +20,14 @@
 // OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
 
+
 #include "DeviceManager.h"
 #include "Exception.h"
 #include "UVCDevice.h"
 #include "HIDDevice.h"
-#include "ORBOptronixDevice.h"
 #include "TangentWaveDevice.h"
+
+#include "ColorState.h"
 
 #include <signal.h>
 #include <mutex>
@@ -39,11 +39,8 @@
 
 using namespace USB;
 
-//static const uint16_t kCelestron = 0x199e;
-//static const uint16_t kNexImage5 = 0x8207;
-
 static std::vector<std::shared_ptr<Device>> theDevs;
-
+ColorState *myState = nullptr;
 
 ////////////////////////////////////////
 
@@ -53,27 +50,15 @@ addDevice( const std::shared_ptr<Device> &dev )
 {
 	if ( dev )
 	{
-		std::cout << "New Device:\n";
-		dev->dumpInfo( std::cout );
-		std::cout << "\n" << std::endl;
 		theDevs.push_back( dev );
-
-		ORBOptronixDevice *ptr = dynamic_cast<ORBOptronixDevice *>( dev.get() );
-		if ( ptr )
-		{
-			ptr->captureData();
-		}
 
 		TangentWaveDevice *twPtr = dynamic_cast<TangentWaveDevice *>( dev.get() );
 		if ( twPtr )
 		{
 			twPtr->clearText();
-			for ( uint8_t line = 0; line < 5; ++line )
-			{
-				twPtr->setText( 0, line, 0, "Hello, world!" );
-				twPtr->setText( 1, line, 0, "Goodbye, cruel world!" );
-				twPtr->setText( 2, line, 0, "Wait, what?" );
-			}
+			twPtr->resetCallbacks();
+			if ( myState )
+				myState->addDevice( twPtr );
 		}
 	}
 }
@@ -87,6 +72,9 @@ removeDevice( const std::shared_ptr<USB::Device> &dev )
 {
 	if ( dev )
 	{
+		if ( myState )
+			myState->removeDevice();
+
 		for ( auto i = theDevs.begin(); i != theDevs.end(); ++i )
 		{
 			if ( (*i) == dev )
@@ -148,6 +136,9 @@ main( int argc, char *argv[] )
 	sigaction(SIGTERM, &sigact, NULL);
 	sigaction(SIGQUIT, &sigact, NULL);
 
+	ColorState ms;
+	myState = &ms;
+
 	DeviceManager mgr;
 
 	try
@@ -184,5 +175,3 @@ main( int argc, char *argv[] )
 
 	return rval;
 }
-
-

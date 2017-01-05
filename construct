@@ -1,18 +1,48 @@
+assert( check_version and check_version( "1.0" ), "Please upgrade constructor" );
 
-BuildConfiguration{ name="Build", optimization="optdebug" }
-DefaultConfiguration( "Build" )
+configuration "release"
+  optimization "heavy"
+  warnings "most"
 
-USBX = assert( ExternalLibrary( "libusb-1.0" ), "libusb required" )
+configuration "build"
+  optimization "optdebug"
+  warnings "most"
 
-EnableLanguages( "c++11" )
-SetOption( "threads", "on" )
+configuration "debug"
+  optimization "debug"
+  warnings "most"
 
-src = Compile( "Control.cpp", "Exception.cpp", "Logger.cpp", "Stream.cpp",
-		"Transfer.cpp", "Device.cpp", "DeviceManager.cpp", "HIDDevice.cpp",
-		"ORBOptronixDevice.cpp", "TangentWaveDevice.cpp", "UVCDevice.cpp" )
+default_configuration "build"
+language "c++11"
+threads "on"
 
-USBPP = Library( "usbpp", src, USBX )
+library "usbpp"
+  source{
+    "Control.cpp",
+    "Exception.cpp",
+    "Logger.cpp",
+    "Stream.cpp",
+    "Transfer.cpp",
+    "Device.cpp",
+    "DeviceManager.cpp",
+    "HIDDevice.cpp",
+    "ORBOptronixDevice.cpp",
+    "TangentWaveDevice.cpp",
+    "UVCDevice.cpp",
+  }
+  external_lib{
+      lib="libusb-1.0";
+      required=true;
+  }
 
-hid_info = Executable( "hid_info", "hid_info.cpp" )
-find_devices = Executable( "find_devices", "find_devices.cpp", USBPP )
+executable "hid_info"
+  source "hid_info.cpp"
 
+executable "find_devices"
+  source "find_devices.cpp"
+  libs "usbpp"
+
+executable "color_panel"
+  source{ "color_panel.cpp", "ColorState.cpp" }
+  libs "usbpp"
+  

@@ -24,6 +24,8 @@
 
 #include "HIDDevice.h"
 #include "Util.h"
+#include "Logger.h"
+#include <unistd.h>
 
 
 ////////////////////////////////////////
@@ -169,7 +171,7 @@ HIDDevice::wantInterface( const struct libusb_interface_descriptor &iface )
 void
 HIDDevice::parseInterface( uint8_t inum, const struct libusb_interface_descriptor &iFaceDesc )
 {
-	if ( iFaceDesc.extra_length < sizeof(HID_info) )
+	if ( iFaceDesc.extra_length < static_cast<int>( sizeof(HID_info) ) )
 		return;
 
 	const HID_info *hidInfo = reinterpret_cast<const HID_info *>( iFaceDesc.extra );
@@ -210,16 +212,18 @@ HIDDevice::parseInterface( uint8_t inum, const struct libusb_interface_descripto
 				myHandle, reqType, LIBUSB_REQUEST_GET_DESCRIPTOR,
 				(desc.bDescriptorType << 8) | iFaceDesc.bInterfaceNumber,
 				0, (unsigned char *)descriptorInfo.data(), getBytes, 1000 );
-
-			if ( err == getBytes )
+			if ( err == static_cast<int>( getBytes ) )
 			{
 				if ( LIBUSB_DT_REPORT == desc.bDescriptorType )
 					parseReport( descriptorInfo.data(), getBytes );
 				else
 					throw std::logic_error( "Unknown descriptor type being retrieved" );
 			}
-			else
+			else if ( err != LIBUSB_ERROR_IO )
+			{
+				error() << "Unable to get descriptor for " << int(i) << ": err " << err << " getBytes " << getBytes << send;
 				throw std::runtime_error( "Unable to extract HID descriptor" );
+			}
 		}
 	}
 }
@@ -231,7 +235,7 @@ HIDDevice::parseInterface( uint8_t inum, const struct libusb_interface_descripto
 void
 HIDDevice::dumpExtraInterfaceInfo( std::ostream &os, const struct libusb_interface_descriptor &iFaceDesc )
 {
-	if ( iFaceDesc.extra_length < sizeof(HID_info) )
+	if ( iFaceDesc.extra_length < static_cast<int>( sizeof(HID_info) ) )
 	{
 		os << "Invalid HID interface descriptor" << std::endl;
 		return;
@@ -285,7 +289,7 @@ HIDDevice::dumpExtraInterfaceInfo( std::ostream &os, const struct libusb_interfa
 				(desc.bDescriptorType << 8) | iFaceDesc.bInterfaceNumber,
 				0, (unsigned char *)descriptorInfo.data(), getBytes, 1000 );
 
-			if ( err == getBytes )
+			if ( err == static_cast<int>( getBytes ) )
 			{
 				if ( LIBUSB_DT_STRING == desc.bDescriptorType )
 				{

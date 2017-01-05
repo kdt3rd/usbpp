@@ -675,7 +675,7 @@ public:
 		uint8_t msb = 0;
 
 		uint16_t page = 0;
-		uint16_t usage = 0;
+
 		switch ( len )
 		{
 			case 4:
@@ -784,7 +784,7 @@ main(int argc, char **argv)
 		perror("HIDIOCGRDESC");
 	} else {
 		int key_size, data_tag, data_type;
-		unsigned int i = 0, data_len, j, cur_indent = 0;
+		unsigned int i = 0, data_len, cur_indent = 0;
 		const uint8_t *curItem = rpt_desc.value;
 
 		while ( i < rpt_desc.size )
@@ -818,7 +818,7 @@ main(int argc, char **argv)
 			}
 			const uint8_t *dataPtr = curItem + key_size;
 
-			for ( int ind = 0; ind < cur_indent; ++ind )
+			for ( unsigned int ind = 0; ind < cur_indent; ++ind )
 				std::cout << "  ";
 
 			std::unique_ptr<report_descriptor> curDesc;

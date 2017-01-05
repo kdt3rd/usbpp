@@ -372,7 +372,7 @@ UVCDevice::startVideo( size_t &frameIndex )
 				( UVC_VS_PROBE_CONTROL << 8 ), 1,
 				len, &setInfo );
 	int err = probe.submitAndWait();
-	if ( err != len )
+	if ( err != static_cast<int>( len ) )
 	{
 		error() << "Negotiating stream rate: " << err << " " << libusb_strerror( libusb_error(err) ) << send;
 		
@@ -701,7 +701,6 @@ UVCDevice::addFormats( const uint8_t iface, const unsigned char *buffer, int buf
 	while ( buflen > 2 && buffer[1] == USB_DT_CS_INTERFACE )
 	{
 		const uvc_descriptor_header *cur = reinterpret_cast<const uvc_descriptor_header *>( buffer );
-		int nFmtInfo = 0;
 		bool skipToNextFmt = false;
 		switch ( cur->bDescriptorSubType )
 		{
@@ -949,7 +948,6 @@ UVCDevice::addControls( const uint8_t iface, const unsigned char *buffer, int bu
 					if ( buflen >= UVC_DT_EXTENSION_UNIT_SIZE(0, 0) )
 					{
 						const uvc_extension_unit_descriptor *eud = reinterpret_cast<const uvc_extension_unit_descriptor *>( desc );
-						int nControls = eud->bNumControls;
 						int nPins = eud->bNrInPins;
 						int ctrlSize = eud->baSourceID[nPins];
 						memcpy( myExtensionUnit, eud->guidExtensionCode, sizeof(myExtensionUnit) );
@@ -982,7 +980,6 @@ UVCDevice::parseControls( const uint8_t iface, const uint16_t terminal,
 {
 #if 1
 	Control fkCtrl;
-	uint8_t ctrlLen;
 	for ( int i = 1; i < 255; ++i )
 	{
 		uint16_t unit = i;
@@ -1468,7 +1465,6 @@ UVCDevice::dumpStandardControls( std::ostream &os, const unsigned char *buffer, 
 					dumpGUID( os, "           ID", eud->guidExtensionCode );
 					dumpHex( os, "           Num Controls", eud->bNumControls, true );
 					dumpHex( os, "           Num In Pins", eud->bNrInPins, true );
-					int nControls = eud->bNumControls;
 					int nPins = eud->bNrInPins;
 					int ctrlSize = eud->baSourceID[nPins];
 					os << "           Control Size: " << ctrlSize << std::endl;
@@ -1886,7 +1882,6 @@ UVCDevice::getCurrentSetup( const UVCProbe &devInfo )
 	if ( curFmtIdx == 0 || curFrmIdx == 0 )
 		throw std::runtime_error( "Invalid setup" );
 
-	bool found = false;
 	for ( size_t f = 0; f < myFormats.size(); ++f )
 	{
 		const FrameDefinition &frm = myFormats[f];

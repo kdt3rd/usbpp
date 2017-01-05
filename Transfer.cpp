@@ -228,8 +228,6 @@ ControlTransfer::fill( libusb_device_handle *handle,
 		needReinit = true;
 	}
 
-	struct libusb_control_setup *ctrlSet = reinterpret_cast<struct libusb_control_setup *>( myData );
-
 	libusb_fill_control_setup( myData, bmRequestType, bRequest,
 							   wValue, wIndex, wLength );
 
@@ -405,7 +403,7 @@ BulkTransfer::send( libusb_device_handle *handle,
 					unsigned char *buffer, int length,
 					unsigned int timeout )
 {
-	if ( length > myBufSize )
+	if ( length > static_cast<int>( myBufSize ) )
 		throw std::runtime_error( "Send buffer too large for max packet size" );
 
 	libusb_fill_bulk_transfer( myXfer, handle, endpoint,

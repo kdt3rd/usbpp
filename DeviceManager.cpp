@@ -27,6 +27,7 @@
 #include <mutex>
 #include "Logger.h"
 #include "Transfer.h"
+#include <unistd.h>
 
 
 ////////////////////////////////////////
@@ -456,9 +457,33 @@ DeviceManager::add( libusb_device *dev, const struct libusb_device_descriptor &d
 
 			newDev->setContext( myContext );
 //			newDev->dumpInfo( std::cout );
-			newDev->claimInterfaces();
-			newDev->startEventHandling();
 
+			// TODO: Seems like come devices take a long time to
+			// initialize, so the claimInterfaces returns BUSY, but if
+			// you wait for things to not be busy, that never happens
+			info() << "Initializing new USB device..." << send;
+			int count = 0;
+			while ( count < 10 )
+			{
+				try
+				{
+					newDev->claimInterfaces();
+					break;
+				}
+				catch ( ... )
+				{
+					error() << "Error claiming interfaces, pausing and retrying..." << send;
+					newDev->shutdown();
+					usleep( 500*1024 );
+					++count;
+				}
+			}
+			if ( count >= 10 )
+			{
+				throw std::runtime_error( "Unable to initialize device" );
+			}
+
+			newDev->startEventHandling();
 			if ( myNewDeviceFunc )
 				myNewDeviceFunc( newDev );
 		}
